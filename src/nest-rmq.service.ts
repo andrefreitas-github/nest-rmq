@@ -8,9 +8,16 @@ import { Channel, ConfirmChannel, Connection, Options, connect } from "amqplib";
 import {
   IConsumerOptions,
   IExchangeOptions,
-  IPublisherOptions,
-  IQueueCommand,
+  IPublisherOptions
 } from "./interfaces";
+import { ConnectionError } from "./exceptions/connection-error";
+
+export type IQueueCommand = {
+  deliveryTag?: string;
+  ack(): Promise<unknown>;
+  channel?: Channel | ConfirmChannel;
+}
+
 
 @Injectable()
 export class NestRmq extends Server implements CustomTransportStrategy {
@@ -29,7 +36,7 @@ export class NestRmq extends Server implements CustomTransportStrategy {
       this.connection = await connect(this.connectionUrl);
       console.info("RabbitMQ Custom Strategy connected 😀");
     } catch (error) {
-      console.error(`Connection problems :( ===> Errors: ${error}`);
+      throw new ConnectionError(this.connectionUrl)
     }
   }
 

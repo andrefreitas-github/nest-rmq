@@ -1,23 +1,31 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
 import {
   CustomTransportStrategy,
   MessageHandler,
   Server,
 } from "@nestjs/microservices";
-import { Channel, ConfirmChannel, Connection, Options, connect } from "amqplib";
+import {
+  Channel,
+  ConfirmChannel,
+  Connection,
+  Message,
+  Options,
+  Replies,
+  connect,
+} from "amqplib";
 import {
   IConsumerOptions,
   IExchangeOptions,
-  IPublisherOptions
+  IPublisherOptions,
 } from "./interfaces";
 import { ConnectionError } from "./exceptions/connection-error";
+import { PublishMessageException } from "./exceptions/message-exception";
 
 export type IQueueCommand = {
   deliveryTag?: string;
   ack(): Promise<unknown>;
   channel?: Channel | ConfirmChannel;
-}
-
+};
 
 @Injectable()
 export class NestRmq extends Server implements CustomTransportStrategy {
@@ -34,9 +42,9 @@ export class NestRmq extends Server implements CustomTransportStrategy {
   private async connect() {
     try {
       this.connection = await connect(this.connectionUrl);
-      console.info("RabbitMQ Custom Strategy connected 😀");
+      Logger.log("RabbitMQ Custom Strategy connected 😀", "NestRmqConnect");
     } catch (error) {
-      throw new ConnectionError(this.connectionUrl)
+      throw new ConnectionError(this.connectionUrl);
     }
   }
 
@@ -47,8 +55,10 @@ export class NestRmq extends Server implements CustomTransportStrategy {
    */
   private async createChannel({ channelType }: IPublisherOptions) {
     if (channelType === "confirmChannel") {
+      Logger.debug("Creating confirmChannel", "NestRmqCreateChannel");
       return await this.connection.createConfirmChannel();
     } else {
+      Logger.debug("Creating channel", "NestRmqCreateChannel");
       return await this.connection.createChannel();
     }
   }
@@ -111,16 +121,30 @@ export class NestRmq extends Server implements CustomTransportStrategy {
    */
   static async publish(
     exchange: string,
-    data: any,
+    data: Buffer,
     routingKey?: string,
     options?: Options.Publish
   ) {
     NestRmq.publisherChannel.publish(
       exchange,
       routingKey,
-      Buffer.from(data),
-      options
+      data,
+      options,
+      (err, ok) => {
+        if (err) {
+          Logger.error(
+            `An error occured to publish message ${JSON.stringify(err)}`,
+            "NestRmqPublish"
+          );
+          throw new PublishMessageException(err);
+        }
+
+        return ok;
+      }
     );
+
+    NestRmq.publisherChannel["waitingConfirms"] ??
+      (await NestRmq.publisherChannel["waitingConfirms"]());
   }
 
   /**
@@ -133,7 +157,7 @@ export class NestRmq extends Server implements CustomTransportStrategy {
     channelPrefetchCount,
     autoACK,
   }: IConsumerOptions): Promise<void> {
-    const channel: Channel | ConfirmChannel = await this.createChannel({
+    const channel: Channel = await this.createChannel({
       exchangeList,
     });
 
@@ -142,15 +166,36 @@ export class NestRmq extends Server implements CustomTransportStrategy {
         /** creates consumer channel */
         channelPrefetchCount && (await channel.prefetch(channelPrefetchCount));
 
-        const consumer = async (msg) => {
+        /** Check Queue existence */
+        await channel
+          .assertQueue(queueProps.name)
+          .then((qProps: Replies.AssertQueue) => {
+            Logger.log(
+              `Queue ${qProps.queue} has ${qProps.messageCount} messages to consume with ${qProps.consumerCount} consumers`,
+              "NestRmqConsumerConfig"
+            );
+          })
+          .catch(Logger.error);
+
+        const consumer = async (msg: Message) => {
           try {
+            Logger.debug(`{debug} Message consumed ${JSON.stringify(msg)}`);
+
             const fn = await this.messageHandlerList?.get(queueProps.handler);
 
-            if (!fn) channel.reject(msg, true);
+            if (!fn) {
+              Logger.warn(
+                `The message ${JSON.stringify(
+                  msg
+                )} has no handlers (annotations on controllers) configured on NestJS.`
+              );
+              channel.reject(msg, true);
+            }
 
             const qCommand: IQueueCommand = {
               channel,
               async ack() {
+                Logger.debug(`Message acknowledged ${JSON.stringify(msg)}`);
                 await channel.ack(msg);
               },
             };
@@ -158,7 +203,7 @@ export class NestRmq extends Server implements CustomTransportStrategy {
             fn(msg, qCommand);
           } catch (err) {
             channel.reject(msg, true);
-            console.log(err);
+            Logger.error(err);
           }
         };
 
@@ -166,10 +211,12 @@ export class NestRmq extends Server implements CustomTransportStrategy {
       }
     }
   }
+
   /**
    * This method is triggered on application shutdown.
    */
   async close() {
+    Logger.warn("Closing Connection", "NestRmqClose");
     await this.connection?.close();
   }
 }

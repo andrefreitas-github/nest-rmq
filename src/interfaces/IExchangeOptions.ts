@@ -1,9 +1,14 @@
 import { Options } from 'amqplib';
-import { IQueueObject } from './IQueueObject';
+import { IConsumeQueueObject, IPublisherQueueObject } from './IQueueObject';
+
+export interface PublisherExchangeOptions {
+  name: string;
+  queueList: IPublisherQueueObject[];
+}
 
 export interface ConsumerExchangeOptions {
     name: string;
-    queueList: IQueueObject[];
+    queueList: IConsumeQueueObject[];
   }
 
 export interface IExchangeOptions {

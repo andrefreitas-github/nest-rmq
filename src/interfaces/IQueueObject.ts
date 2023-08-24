@@ -1,8 +1,12 @@
-import { Options } from 'amqplib';
+import { Options } from "amqplib";
 
-export interface IQueueObject {
+interface IQueueObject {
   name: string;
-  handler: any;
   routingKey?: string;
   queueOptions?: Options.AssertQueue;
 }
+export interface IConsumeQueueObject extends IQueueObject {
+  handler: any;
+}
+
+export interface IPublisherQueueObject extends IQueueObject {}

@@ -53,7 +53,7 @@ export class NestRmq extends Server implements CustomTransportStrategy {
    * @param channelType Channel | ConfirmChannel
    * @returns Channel | ConfirmChannel
    */
-  private async createChannel({ channelType }: IPublisherOptions) {
+  private async createChannel({ channelType }: IPublisherOptions): Promise<Channel | ConfirmChannel> {
     if (channelType === "confirmChannel") {
       Logger.debug("Creating confirmChannel", "NestRmqCreateChannel");
       return await this.connection.createConfirmChannel();
@@ -83,7 +83,7 @@ export class NestRmq extends Server implements CustomTransportStrategy {
     options,
   }: IExchangeOptions) {
     /** creates publisher channel */
-    const channel = await this.createChannel({ channelType, exchangeList });
+    const channel: Channel | ConfirmChannel = await this.createChannel({ channelType, exchangeList });
 
     for (const { name } of exchangeList) {
       await channel.assertExchange(name, type, options);

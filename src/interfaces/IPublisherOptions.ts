@@ -1,6 +1,6 @@
-import { ConsumerExchangeOptions } from "./IExchangeOptions";
+import { PublisherExchangeOptions } from "./IExchangeOptions";
 
 export interface IPublisherOptions {
     channelType?: 'channel' | 'confirmChannel';
-    exchangeList: ConsumerExchangeOptions[];
+    exchangeList: PublisherExchangeOptions[];
   }

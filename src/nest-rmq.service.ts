@@ -112,6 +112,21 @@ export class NestRmq extends Server implements CustomTransportStrategy {
     }
   }
 
+  private static toBuffer(data: Buffer | string | object){
+
+    /** stringfied data */
+    if(typeof data === 'string'){
+      return Buffer.from(data)
+    }
+
+    /** transform to stringfied data */
+    if(typeof data === 'object'){
+      return Buffer.from(JSON.stringify(data))
+    }
+
+    return data
+  }
+
   /**
    *
    * @param exchange Exchange to be used on delivery message
@@ -121,14 +136,17 @@ export class NestRmq extends Server implements CustomTransportStrategy {
    */
   static async publish(
     exchange: string,
-    data: Buffer,
+    data: Buffer | string | object,
     routingKey?: string,
     options?: Options.Publish
   ) {
+
+    const dataBuffer = this.toBuffer(data)
+
     NestRmq.publisherChannel.publish(
       exchange,
       routingKey,
-      data,
+      dataBuffer,
       options,
       (err, ok) => {
         if (err) {
@@ -142,9 +160,6 @@ export class NestRmq extends Server implements CustomTransportStrategy {
         return ok;
       }
     );
-
-    NestRmq.publisherChannel["waitingConfirms"] ??
-      (await NestRmq.publisherChannel["waitingConfirms"]());
   }
 
   /**

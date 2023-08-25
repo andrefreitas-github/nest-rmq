@@ -24,6 +24,7 @@ import { PublishMessageException } from "./exceptions/message-exception";
 export type IQueueCommand = {
   deliveryTag?: string;
   ack(): Promise<unknown>;
+  reject(requeue?: boolean): Promise<unknown>;
   channel?: Channel | ConfirmChannel;
 };
 
@@ -53,7 +54,9 @@ export class NestRmq extends Server implements CustomTransportStrategy {
    * @param channelType Channel | ConfirmChannel
    * @returns Channel | ConfirmChannel
    */
-  private async createChannel({ channelType }: IPublisherOptions): Promise<Channel | ConfirmChannel> {
+  private async createChannel({
+    channelType,
+  }: IPublisherOptions): Promise<Channel | ConfirmChannel> {
     if (channelType === "confirmChannel") {
       Logger.debug("Creating confirmChannel", "NestRmqCreateChannel");
       return await this.connection.createConfirmChannel();
@@ -83,7 +86,10 @@ export class NestRmq extends Server implements CustomTransportStrategy {
     options,
   }: IExchangeOptions) {
     /** creates publisher channel */
-    const channel: Channel | ConfirmChannel = await this.createChannel({ channelType, exchangeList });
+    const channel: Channel | ConfirmChannel = await this.createChannel({
+      channelType,
+      exchangeList,
+    });
 
     for (const { name } of exchangeList) {
       await channel.assertExchange(name, type, options);
@@ -112,19 +118,18 @@ export class NestRmq extends Server implements CustomTransportStrategy {
     }
   }
 
-  private static toBuffer(data: Buffer | string | object){
-
+  private static toBuffer(data: Buffer | string | object) {
     /** stringfied data */
-    if(typeof data === 'string'){
-      return Buffer.from(data)
+    if (typeof data === "string") {
+      return Buffer.from(data);
     }
 
     /** transform to stringfied data */
-    if(typeof data === 'object'){
-      return Buffer.from(JSON.stringify(data))
+    if (typeof data === "object") {
+      return Buffer.from(JSON.stringify(data));
     }
 
-    return data
+    return data;
   }
 
   /**
@@ -139,9 +144,8 @@ export class NestRmq extends Server implements CustomTransportStrategy {
     data: Buffer | string | object,
     routingKey?: string,
     options?: Options.Publish
-  ) {
-
-    const dataBuffer = this.toBuffer(data)
+  ): Promise<void> {
+    const dataBuffer = this.toBuffer(data);
 
     NestRmq.publisherChannel.publish(
       exchange,
@@ -209,9 +213,13 @@ export class NestRmq extends Server implements CustomTransportStrategy {
 
             const qCommand: IQueueCommand = {
               channel,
-              async ack() {
+              async ack(): Promise<void> {
                 Logger.debug(`Message acknowledged ${JSON.stringify(msg)}`);
                 await channel.ack(msg);
+              },
+              async reject(requeue = false): Promise<void> {
+                Logger.debug(`Message rejected ${JSON.stringify(msg)}`);
+                await channel.reject(msg, requeue);
               },
             };
 
